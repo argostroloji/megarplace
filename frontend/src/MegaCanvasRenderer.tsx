@@ -123,7 +123,6 @@ export const MegaCanvasRenderer = React.forwardRef<any, MegaCanvasRendererProps>
     const gridY = Math.floor(y);
 
     if (gridX >= 0 && gridX < canvasSize && gridY >= 0 && gridY < canvasSize) {
-      updatePixelLocal(gridX, gridY, selectedColor);
       onPixelClick(gridX, gridY, selectedColor);
     }
   };

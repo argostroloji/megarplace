@@ -150,9 +150,10 @@ export default function MegaCanvasApp() {
             }
         };
 
-        const interval = setInterval(pollEvents, 3000); // Poll every 3 seconds
+        const interval = setInterval(pollEvents, 1000); // Poll every 1 second for snappier feedback
         return () => clearInterval(interval);
     }, []);
+
 
 
 
@@ -306,10 +307,16 @@ export default function MegaCanvasApp() {
 
             await tx.wait(1); // Wait for 1 block confirmation
 
+            // Manual update after confirmation for instant user feedback
+            if (rendererRef.current) {
+                rendererRef.current.updatePixel(Number(x), Number(y), Number(color));
+            }
+
             setLiveStream(prev => [
                 { id: Date.now(), text: `[STATUS: OK] Pixel (${x},${y}) synced to on-chain.` },
                 ...prev.slice(0, 9)
             ]);
+
 
         } catch (err: any) {
             console.error("TX ERROR:", err);
