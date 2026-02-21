@@ -104,6 +104,17 @@ contract MegaCanvas {
     }
 
     /**
+     * @dev Fetch a portion of the grid for frontend synchronization.
+     */
+    function getGridBatch(uint256 start, uint256 count) external view returns (uint256[] memory) {
+        uint256[] memory batch = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            batch[i] = grid[start + i];
+        }
+        return batch;
+    }
+
+    /**
      * @dev Withdraw collected fees to the owner.
      */
     function withdraw() external {

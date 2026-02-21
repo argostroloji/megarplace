@@ -124,11 +124,14 @@ export default function MegaCanvasApp() {
                             return newList.sort((a: any, b: any) => b.pixels - a.pixels).slice(0, 10);
                         });
 
-                        // Update livestream
-                        setLiveStream(prev => [
-                            { id: Date.now(), text: `[SYNC] ${painter.slice(0, 6)}... painted (${x},${y})` },
-                            ...prev.slice(0, 9)
-                        ]);
+                        // Update livestream with stable limit
+                        setLiveStream(prev => {
+                            const newStream = [
+                                { id: `${Date.now()}-${Math.random()}`, text: `[SYNC] ${painter.slice(0, 6)}... painted (${x},${y})` },
+                                ...prev
+                            ];
+                            return newStream.slice(0, 10);
+                        });
                     });
 
                     return () => {
@@ -142,28 +145,56 @@ export default function MegaCanvasApp() {
         setupEventListener();
     }, [activeWallet]);
 
-    // Initial Load & User Score Fetch
+    // Initial Load & Canvas Sync
     useEffect(() => {
-        const fetchUserData = async () => {
-            if (activeWallet) {
-                try {
-                    const ethProvider = await activeWallet.getEthereumProvider();
-                    const provider = new ethers.BrowserProvider(ethProvider);
-                    const contract = new ethers.Contract(CONTRACT_ADDRESS, MegaCanvasArtifact.abi, provider);
+        const fetchInitialState = async () => {
+            try {
+                // Use a public provider if no wallet, for initial load
+                const rpcProvider = new ethers.JsonRpcProvider("https://carrot.megaeth.com/rpc");
+                const contract = new ethers.Contract(CONTRACT_ADDRESS, MegaCanvasArtifact.abi, rpcProvider);
 
-                    const count = await contract.pixelCount(activeWallet.address);
+                console.log("Fetching global canvas state...");
+                const totalSlots = 16384;
+                const batchSize = 2000;
+                const newPixels = new Uint8Array(1024 * 1024);
+
+                for (let i = 0; i < totalSlots; i += batchSize) {
+                    const count = Math.min(batchSize, totalSlots - i);
+                    const batch = await contract.getGridBatch(i, count);
+
+                    for (let s = 0; s < batch.length; s++) {
+                        let slotValue = BigInt(batch[s]);
+                        for (let p = 0; p < 64; p++) {
+                            const pixelIdx = (i + s) * 64 + p;
+                            if (pixelIdx < newPixels.length) {
+                                newPixels[pixelIdx] = Number((slotValue >> BigInt(p * 4)) & 0xFn);
+                            }
+                        }
+                    }
+                }
+                setInitialPixels(newPixels);
+                console.log("Canvas state fully synced.");
+
+                // If wallet exists, fetch user score
+                if (activeWallet) {
+                    const ethProvider = await activeWallet.getEthereumProvider();
+                    const browserProvider = new ethers.BrowserProvider(ethProvider);
+                    const walletContract = new ethers.Contract(CONTRACT_ADDRESS, MegaCanvasArtifact.abi, browserProvider);
+                    const count = await walletContract.pixelCount(activeWallet.address);
                     if (Number(count) > 0) {
                         const shortAddr = `${activeWallet.address.slice(0, 6)}...${activeWallet.address.slice(-4)}`;
                         setLeaderboard([{ address: shortAddr, pixels: Number(count) }]);
                     }
-                } catch (e) {
-                    console.error("Initial score fetch fail", e);
                 }
+            } catch (e) {
+                console.error("Data synchronization failed", e);
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         };
-        fetchUserData();
+        fetchInitialState();
     }, [activeWallet]);
+
 
 
     const handlePixelClick = async (x, y, color) => {
@@ -274,9 +305,7 @@ export default function MegaCanvasApp() {
                 <header className="cyber-header">
                     <img src={GameLogo} alt="MegaRplace Logo" className="game-logo" />
                     <div className="stats">
-                        <span className="neon-blue">10ms BLOCK TIME</span>
                         <span className="neon-yellow">NEXT RESET: {timeLeft}</span>
-                        <span className="neon-green">LIVE TX STREAM</span>
                     </div>
 
                     <div className="auth-section">
