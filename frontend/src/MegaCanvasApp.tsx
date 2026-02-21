@@ -220,7 +220,7 @@ export default function MegaCanvasApp() {
             // Simulate Account Abstraction seamless tx for smart wallets
             // In a real AA (Privy Server Wallet) this would send gaslessly via paymaster.
             // Balance Check
-            if (parseFloat(balance) < 0.01) {
+            if (parseFloat(balance) < 0.001) {
                 setLiveStream(prev => [
                     { id: Date.now(), text: `[SYSTEM: ERROR] Insufficient ETH balance.` },
                     ...prev.slice(0, 9)
@@ -267,8 +267,8 @@ export default function MegaCanvasApp() {
 
             const contract = new ethers.Contract(CONTRACT_ADDRESS, MegaCanvasArtifact.abi, signer);
 
-            // 0.01 ETH fee defined in contract
-            const tx = await contract.paint(x, y, color, { value: ethers.parseEther("0.01") });
+            // 0.001 ETH fee defined in contract
+            const tx = await contract.paint(x, y, color, { value: ethers.parseEther("0.001") });
 
             setLiveStream(prev => [
                 { id: Date.now(), text: `[CMD: UPLOAD] TX Sent: Waiting for block...` },

@@ -8,7 +8,7 @@ pragma solidity ^0.8.20;
  */
 contract MegaCanvas {
     uint16 public constant CANVAS_SIZE = 1024;
-    uint256 public constant PIXEL_FEE = 0.01 ether;
+    uint256 public constant PIXEL_FEE = 0.001 ether;
     address public immutable owner;
 
     // 1024 * 1024 pixels = 1,048,576
