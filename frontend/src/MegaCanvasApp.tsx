@@ -91,22 +91,34 @@ export default function MegaCanvasApp() {
     }, []);
 
 
-    // Event Listener for Real-Time Sync (Public Fallback)
+    // Event Listener for Real-Time Sync (Polling Fallback for non-filter RPCs)
     useEffect(() => {
-        let contract: any;
-        const setupEventListener = async () => {
-            try {
-                const rpcProvider = new ethers.JsonRpcProvider("https://carrot.megaeth.com/rpc");
-                contract = new ethers.Contract(CONTRACT_ADDRESS, MegaCanvasArtifact.abi, rpcProvider);
+        let lastBlock: number = 0;
+        const rpcProvider = new ethers.JsonRpcProvider("https://carrot.megaeth.com/rpc");
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, MegaCanvasArtifact.abi, rpcProvider);
 
-                console.log("Starting Real-Time Matrix Sync...");
-                contract.on("PixelPainted", (x, y, color, painter) => {
+        const pollEvents = async () => {
+            try {
+                const currentBlock = await rpcProvider.getBlockNumber();
+                if (lastBlock === 0) {
+                    lastBlock = currentBlock;
+                    return;
+                }
+                if (currentBlock <= lastBlock) return;
+
+                console.log(`[POLLING] Scanning blocks ${lastBlock + 1} to ${currentBlock}`);
+                const filter = contract.filters.PixelPainted();
+                const events = await contract.queryFilter(filter, lastBlock + 1, currentBlock);
+
+                events.forEach((evt: any) => {
+                    const [x, y, color, painter] = evt.args;
                     console.log(`[NETWORK EVENT] Pixel (${x},${y}) -> ${painter}`);
 
                     if (rendererRef.current) {
                         rendererRef.current.updatePixel(Number(x), Number(y), Number(color));
                     }
 
+                    // Update local leaderboard
                     setLeaderboard((prev: any) => {
                         const shortPainter = `${painter.slice(0, 6)}...${painter.slice(-4)}`;
                         const exists = prev.find((u: any) => u.address === shortPainter);
@@ -121,6 +133,7 @@ export default function MegaCanvasApp() {
                         return newList.sort((a: any, b: any) => b.pixels - a.pixels).slice(0, 10);
                     });
 
+                    // Update stream
                     setLiveStream(prev => {
                         const newStream = [
                             { id: `${Date.now()}-${Math.random()}`, text: `[SYNC] ${painter.slice(0, 6)}... painted (${x},${y})` },
@@ -129,15 +142,17 @@ export default function MegaCanvasApp() {
                         return newStream.slice(0, 10);
                     });
                 });
+
+                lastBlock = currentBlock;
             } catch (e) {
-                console.error("Failed to setup listener", e);
+                console.error("Polling error", e);
             }
         };
-        setupEventListener();
-        return () => {
-            if (contract) contract.removeAllListeners("PixelPainted");
-        };
+
+        const interval = setInterval(pollEvents, 3000); // Poll every 3 seconds
+        return () => clearInterval(interval);
     }, []);
+
 
 
     // Initial Load & Canvas Sync
