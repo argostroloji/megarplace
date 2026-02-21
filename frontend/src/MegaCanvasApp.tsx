@@ -91,59 +91,54 @@ export default function MegaCanvasApp() {
     }, []);
 
 
-    // Event Listener for Real-Time Sync
+    // Event Listener for Real-Time Sync (Public Fallback)
     useEffect(() => {
+        let contract: any;
         const setupEventListener = async () => {
-            if (activeWallet) {
-                try {
-                    const ethProvider = await activeWallet.getEthereumProvider();
-                    const provider = new ethers.BrowserProvider(ethProvider);
-                    const contract = new ethers.Contract(CONTRACT_ADDRESS, MegaCanvasArtifact.abi, provider);
+            try {
+                const rpcProvider = new ethers.JsonRpcProvider("https://carrot.megaeth.com/rpc");
+                contract = new ethers.Contract(CONTRACT_ADDRESS, MegaCanvasArtifact.abi, rpcProvider);
 
-                    contract.on("PixelPainted", (x, y, color, painter) => {
-                        console.log(`Event: Pixel (${x},${y}) painted by ${painter}`);
+                console.log("Starting Real-Time Matrix Sync...");
+                contract.on("PixelPainted", (x, y, color, painter) => {
+                    console.log(`[NETWORK EVENT] Pixel (${x},${y}) -> ${painter}`);
 
-                        // Update canvas instantly via ref
-                        if (rendererRef.current) {
-                            rendererRef.current.updatePixel(Number(x), Number(y), Number(color));
+                    if (rendererRef.current) {
+                        rendererRef.current.updatePixel(Number(x), Number(y), Number(color));
+                    }
+
+                    setLeaderboard((prev: any) => {
+                        const shortPainter = `${painter.slice(0, 6)}...${painter.slice(-4)}`;
+                        const exists = prev.find((u: any) => u.address === shortPainter);
+                        let newList;
+                        if (exists) {
+                            newList = prev.map((u: any) =>
+                                u.address === shortPainter ? { ...u, pixels: u.pixels + 1 } : u
+                            );
+                        } else {
+                            newList = [...prev, { address: shortPainter, pixels: 1 }];
                         }
-
-                        // Update leaderboard real-time with animation logic
-                        setLeaderboard((prev: any) => {
-                            const shortPainter = `${painter.slice(0, 6)}...${painter.slice(-4)}`;
-                            const exists = prev.find((u: any) => u.address === shortPainter);
-                            let newList;
-                            if (exists) {
-                                newList = prev.map((u: any) =>
-                                    u.address === shortPainter ? { ...u, pixels: u.pixels + 1 } : u
-                                );
-                            } else {
-                                newList = [...prev, { address: shortPainter, pixels: 1 }];
-                            }
-                            // Sort by pixel count and keep top 10
-                            return newList.sort((a: any, b: any) => b.pixels - a.pixels).slice(0, 10);
-                        });
-
-                        // Update livestream with stable limit
-                        setLiveStream(prev => {
-                            const newStream = [
-                                { id: `${Date.now()}-${Math.random()}`, text: `[SYNC] ${painter.slice(0, 6)}... painted (${x},${y})` },
-                                ...prev
-                            ];
-                            return newStream.slice(0, 10);
-                        });
+                        return newList.sort((a: any, b: any) => b.pixels - a.pixels).slice(0, 10);
                     });
 
-                    return () => {
-                        contract.removeAllListeners("PixelPainted");
-                    };
-                } catch (e) {
-                    console.error("Failed to setup event listener", e);
-                }
+                    setLiveStream(prev => {
+                        const newStream = [
+                            { id: `${Date.now()}-${Math.random()}`, text: `[SYNC] ${painter.slice(0, 6)}... painted (${x},${y})` },
+                            ...prev
+                        ];
+                        return newStream.slice(0, 10);
+                    });
+                });
+            } catch (e) {
+                console.error("Failed to setup listener", e);
             }
         };
         setupEventListener();
-    }, [activeWallet]);
+        return () => {
+            if (contract) contract.removeAllListeners("PixelPainted");
+        };
+    }, []);
+
 
     // Initial Load & Canvas Sync
     useEffect(() => {
@@ -175,25 +170,37 @@ export default function MegaCanvasApp() {
                 setInitialPixels(newPixels);
                 console.log("Canvas state fully synced.");
 
-                // If wallet exists, fetch user score
-                if (activeWallet) {
-                    const ethProvider = await activeWallet.getEthereumProvider();
-                    const browserProvider = new ethers.BrowserProvider(ethProvider);
-                    const walletContract = new ethers.Contract(CONTRACT_ADDRESS, MegaCanvasArtifact.abi, browserProvider);
-                    const count = await walletContract.pixelCount(activeWallet.address);
-                    if (Number(count) > 0) {
-                        const shortAddr = `${activeWallet.address.slice(0, 6)}...${activeWallet.address.slice(-4)}`;
-                        setLeaderboard([{ address: shortAddr, pixels: Number(count) }]);
-                    }
-                }
+                // FETCH HISTORICAL EVENTS FOR GLOBAL LEADERBOARD
+                console.log("Scraping historical events for leaderboard...");
+                const filter = contract.filters.PixelPainted();
+                // Querying the last 50,000 blocks (or from deployment if block number known)
+                const events = await contract.queryFilter(filter, -50000);
+
+                const scores: { [key: string]: number } = {};
+                events.forEach((evt: any) => {
+                    const p = evt.args[3]; // painter
+                    scores[p] = (scores[p] || 0) + 1;
+                });
+
+                const globalLeaderboard = Object.entries(scores)
+                    .map(([addr, pixels]) => ({
+                        address: `${addr.slice(0, 6)}...${addr.slice(-4)}`,
+                        pixels
+                    }))
+                    .sort((a, b) => b.pixels - a.pixels)
+                    .slice(0, 10);
+
+                setLeaderboard(globalLeaderboard);
+
             } catch (e) {
-                console.error("Data synchronization failed", e);
+                console.error("Critical Sync Error", e);
             } finally {
                 setLoading(false);
             }
         };
         fetchInitialState();
-    }, [activeWallet]);
+    }, []);
+
 
 
 
