@@ -55,9 +55,10 @@ export default function MegaCanvasApp() {
     const [selectedColor, setSelectedColor] = useState(2); // Default Red
     const [leaderboard, setLeaderboard] = useState([]);
     const [liveStream, setLiveStream] = useState([]);
-    const [initialPixels, setInitialPixels] = useState(new Uint8Array(1024 * 1024));
+    const [initialPixels, setInitialPixels] = useState<Uint8Array | null>(null);
     const [loading, setLoading] = useState(true);
-    const [timeLeft, setTimeLeft] = useState("");
+    const [timeLeft, setTimeLeft] = useState("00:00:00");
+    const [isPainting, setIsPainting] = useState(false);
 
     // 24h Reset Timer Logic
     useEffect(() => {
@@ -225,6 +226,12 @@ export default function MegaCanvasApp() {
             return;
         }
 
+        if (isPainting) {
+            console.log("Transaction already in progress, ignoring click.");
+            return;
+        }
+
+        setIsPainting(true);
         try {
             // First display pending text 
             setLiveStream(prev => [
@@ -232,19 +239,18 @@ export default function MegaCanvasApp() {
                 ...prev.slice(0, 9)
             ]);
 
-            // Simulate Account Abstraction seamless tx for smart wallets
-            // In a real AA (Privy Server Wallet) this would send gaslessly via paymaster.
-            // Balance Check
+            const isSmartWallet = activeWallet?.walletClientType === 'privy';
+
+            // Check balance again from state
             if (parseFloat(balance) < 0.001) {
                 setLiveStream(prev => [
                     { id: Date.now(), text: `[SYSTEM: ERROR] Insufficient ETH balance.` },
                     ...prev.slice(0, 9)
                 ]);
                 alert("Insufficient ETH! Please request test tokens from the faucet to paint.");
+                setIsPainting(false);
                 return;
             }
-
-            const isSmartWallet = activeWallet?.walletClientType === 'privy';
 
             // Fallback for direct Metamask connections (if not embedded)
             let provider, signer;
@@ -258,6 +264,7 @@ export default function MegaCanvasApp() {
                 signer = await provider.getSigner();
             } else {
                 alert("MetaMask (or a embedded wallet) not found!");
+                setIsPainting(false);
                 return;
             }
 
@@ -276,6 +283,7 @@ export default function MegaCanvasApp() {
                     }
                 } catch (switchError: any) {
                     alert("Please switch to MegaETH Testnet!");
+                    setIsPainting(false);
                     return;
                 }
             }
@@ -283,18 +291,20 @@ export default function MegaCanvasApp() {
             const contract = new ethers.Contract(CONTRACT_ADDRESS, MegaCanvasArtifact.abi, signer);
 
             // Redefining fee for 0.001 ETH
-            // Adding gasLimit to prevent estimation failures on custom L2s
+            // Increasing gasLimit to 250,000 for maximum safety on custom network
             const tx = await contract.paint(x, y, color, {
                 value: ethers.parseEther("0.001"),
-                gasLimit: 100000 // Safe overhead for single pixel paint
+                gasLimit: 250000
             });
+
+            console.log("Transaction Sent:", tx.hash);
 
             setLiveStream(prev => [
                 { id: Date.now(), text: `[CMD: UPLOAD] TX Sent: Waiting for block...` },
                 ...prev.slice(0, 9)
             ]);
 
-            await tx.wait(1); // Wait for 1 block confirmation (10ms on MegaETH!)
+            await tx.wait(1); // Wait for 1 block confirmation
 
             setLiveStream(prev => [
                 { id: Date.now(), text: `[STATUS: OK] Pixel (${x},${y}) synced to on-chain.` },
@@ -302,14 +312,21 @@ export default function MegaCanvasApp() {
             ]);
 
         } catch (err: any) {
-            console.error(err);
+            console.error("TX ERROR:", err);
             const errorMsg = err.reason || err.message || "Unknown Error";
             setLiveStream(prev => [
                 { id: Date.now(), text: `[SYSTEM: FAIL] ${errorMsg.slice(0, 40)}...` },
                 ...prev.slice(0, 9)
             ]);
+            // If it's a nonce error, suggesting a refresh
+            if (errorMsg.toLowerCase().includes("nonce")) {
+                alert("Blockchain Sync Error (Nonce). Please refresh the page and try again.");
+            }
+        } finally {
+            setIsPainting(false);
         }
     };
+
 
 
 
