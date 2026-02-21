@@ -267,8 +267,12 @@ export default function MegaCanvasApp() {
 
             const contract = new ethers.Contract(CONTRACT_ADDRESS, MegaCanvasArtifact.abi, signer);
 
-            // 0.001 ETH fee defined in contract
-            const tx = await contract.paint(x, y, color, { value: ethers.parseEther("0.001") });
+            // Redefining fee for 0.001 ETH
+            // Adding gasLimit to prevent estimation failures on custom L2s
+            const tx = await contract.paint(x, y, color, {
+                value: ethers.parseEther("0.001"),
+                gasLimit: 100000 // Safe overhead for single pixel paint
+            });
 
             setLiveStream(prev => [
                 { id: Date.now(), text: `[CMD: UPLOAD] TX Sent: Waiting for block...` },
@@ -284,8 +288,9 @@ export default function MegaCanvasApp() {
 
         } catch (err: any) {
             console.error(err);
+            const errorMsg = err.reason || err.message || "Unknown Error";
             setLiveStream(prev => [
-                { id: Date.now(), text: `[SYSTEM: FAIL] Transaction rejected by client.` },
+                { id: Date.now(), text: `[SYSTEM: FAIL] ${errorMsg.slice(0, 40)}...` },
                 ...prev.slice(0, 9)
             ]);
         }
