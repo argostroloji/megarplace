@@ -142,31 +142,29 @@ export default function MegaCanvasApp() {
         setupEventListener();
     }, [activeWallet]);
 
-    // Example: Mock backend load
+    // Initial Load & User Score Fetch
     useEffect(() => {
-        // In production: Fetch full grid array from Redis Service (via WebSocket/REST)
-        // fetch('/api/canvas/snapshot').then(res => res.arrayBuffer()).then(buffer => { ... });
-        setTimeout(() => {
+        const fetchUserData = async () => {
+            if (activeWallet) {
+                try {
+                    const ethProvider = await activeWallet.getEthereumProvider();
+                    const provider = new ethers.BrowserProvider(ethProvider);
+                    const contract = new ethers.Contract(CONTRACT_ADDRESS, MegaCanvasArtifact.abi, provider);
+
+                    const count = await contract.pixelCount(activeWallet.address);
+                    if (Number(count) > 0) {
+                        const shortAddr = `${activeWallet.address.slice(0, 6)}...${activeWallet.address.slice(-4)}`;
+                        setLeaderboard([{ address: shortAddr, pixels: Number(count) }]);
+                    }
+                } catch (e) {
+                    console.error("Initial score fetch fail", e);
+                }
+            }
             setLoading(false);
-            // Dummy leaderboard data (top 10)
-            setLeaderboard([
-                { address: '0xabc...123', pixels: 4500 },
-                { address: '0xdef...456', pixels: 3200 },
-                { address: '0x123...890', pixels: 1100 },
-                { address: '0x789...cde', pixels: 950 },
-                { address: '0x456...fab', pixels: 800 },
-                { address: '0xaaa...bbb', pixels: 750 },
-                { address: '0xccc...ddd', pixels: 600 },
-                { address: '0xeee...fff', pixels: 550 },
-                { address: '0x111...222', pixels: 400 },
-                { address: '0x333...444', pixels: 300 },
-            ]);
-            setLiveStream([
-                { id: 1, text: '0xdef painted 50 pixels in 20ms' },
-                { id: 2, text: '0xabc painted 1 pixel in 10ms' },
-            ]);
-        }, 1000);
-    }, []);
+        };
+        fetchUserData();
+    }, [activeWallet]);
+
 
     const handlePixelClick = async (x, y, color) => {
         if (!authenticated) {
